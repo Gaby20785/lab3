@@ -1,0 +1,286 @@
+syntax = "proto3";
+
+package aeroDist;
+
+option go_package = "proto/";
+
+service AeroDist {
+    // Registro e inicio
+    rpc RegistrarEntidad (RegistroRequest) returns (RegistroResponse);
+    rpc SolicitarInicio (InicioRequest) returns (InicioResponse);
+  
+    // Servicios para RYW (Coordinador -> Broker)
+    rpc ObtenerEstadoInicial (EstadoInicialRequest) returns (EstadoInicialResponse);
+    rpc RealizarCheckIn (CheckInRequest) returns (CheckInResponse);
+    rpc ObtenerTarjetaEmbarque (TarjetaRequest) returns (TarjetaResponse);
+  
+    // Servicios para Datanodes (Broker -> Datanodes)
+    rpc ObtenerAsientosDisponibles (AsientosRequest) returns (AsientosResponse);
+    rpc ReservarAsiento (ReservaRequest) returns (ReservaResponse);
+    rpc ObtenerInformacionVuelo (InfoVueloRequest) returns (InfoVueloResponse);
+
+    //Servicio para actualizaciones de vuelos desde CSV
+    rpc EnviarActualizacionVuelo (ActualizacionVueloRequest) returns (ActualizacionVueloResponse);
+    
+    //Servicio para gossip entre datanodes
+    rpc SincronizarEstado (SincronizacionRequest) returns (SincronizacionResponse);
+
+    // Servicios para Monotonic Reads
+    rpc ObtenerEstadoVuelo (EstadoVueloRequest) returns (EstadoVueloResponse);
+
+    rpc SolicitarVoto (SolicitudVoto) returns (RespuestaVoto);
+    rpc AppendEntries (SolicitudAppendEntries) returns (RespuestaAppendEntries);
+    rpc ProponerOperacionPista (PropuestaOperacion) returns (RespuestaPropuesta);
+
+    // Servicios para Consenso de Pistas
+    rpc AsignarPista (SolicitudPista) returns (RespuestaPista);
+    rpc LiberarPista (SolicitudLiberar) returns (RespuestaPista);
+
+}
+
+message RegistroRequest {
+    string tipo_entidad = 1;
+    string id_entidad = 2;
+    string direccion = 3;
+}
+
+message RegistroResponse {
+    bool exito = 1;
+    string mensaje = 2;
+}
+
+message InicioRequest {
+    string tipo_entidad = 1;
+    string id_entidad = 2;
+}
+
+message InicioResponse {
+    bool puede_iniciar = 1;
+    string mensaje = 2;
+}
+
+message EstadoInicialRequest {
+    string cliente_id = 1;
+    string vuelo_id = 2;
+    StickyInfo sticky_info = 3;
+}
+
+message EstadoInicialResponse {
+    bool exito = 1;
+    string mensaje = 2;
+    repeated string asientos_disponibles = 3;
+    int32 total_asientos = 4;
+    int32 asientos_ocupados = 5;
+}
+
+message StickyInfo {
+    bool tiene_sesion = 1;
+    string datanode_address = 2;
+    string cliente_id = 3;
+}
+
+message CheckInRequest {
+    string cliente_id = 1;
+    string vuelo_id = 2;
+    string asiento = 3;
+    string request_id = 4;
+    StickyInfo sticky_info = 5;
+}
+
+message DatanodeAsignacion {
+  string cliente_id = 1;
+  string datanode_address = 2;
+}
+
+message CheckInResponse {
+    bool exito = 1;
+    string mensaje = 2;
+    string tarjeta_embarque_id = 3;
+    string asiento_asignado = 4;
+    DatanodeAsignacion asignacion = 5; 
+}
+
+message TarjetaRequest {
+    string cliente_id = 1;
+    string tarjeta_embarque_id = 2;
+    StickyInfo sticky_info = 3;
+}
+
+message TarjetaResponse {
+    bool exito = 1;
+    string mensaje = 2;
+    string vuelo_id = 3;
+    string asiento = 4;
+    string estado = 5;
+    string cliente_id = 6;
+}
+
+message AsientosRequest {
+    string vuelo_id = 1;
+}
+
+message AsientosResponse {
+    bool exito = 1;
+    string mensaje = 2;
+    repeated string asientos_disponibles = 3;
+    map<string, bool> estado_asientos = 4;
+}
+
+message ReservaRequest {
+    string vuelo_id = 1;
+    string asiento = 2;
+    string cliente_id = 3;
+    string request_id = 4;
+}
+
+message ReservaResponse {
+    bool exito = 1;
+    string mensaje = 2;
+    string tarjeta_embarque_id = 3;
+}
+
+message InfoVueloRequest {
+    string tarjeta_embarque_id = 1;
+}
+
+message InfoVueloResponse {
+    bool exito = 1;
+    string mensaje = 2;
+    string vuelo_id = 3;
+    string asiento = 4;
+    string cliente_id = 5;
+    string estado = 6;
+}
+
+message ActualizacionVueloRequest {
+    string vuelo_id = 1;
+    string update_type = 2;
+    string update_value = 3;
+    int64 sim_time_sec = 4;
+    VectorClock reloj_vector = 5;
+}
+
+message ActualizacionVueloResponse {
+    bool exito = 1;
+    string mensaje = 2;
+    VectorClock nuevo_reloj = 3;
+}
+
+message VectorClock {
+    map<string, int32> clocks = 1;
+}
+
+message EstadoDatanode {
+    map<string, EstadoVuelo> estados_vuelos = 1;
+    VectorClock reloj_vector = 2;
+    string datanode_id = 3;
+}
+
+message EstadoVuelo {
+    string ultimo_estado = 1;
+    string ultima_puerta = 2;
+    VectorClock reloj_estado = 3;
+    int64 ultima_actualizacion = 4;
+    map<string, bool> asientos_ocupados = 5;
+    map<string, TarjetaInfo> tarjetas = 6;
+}
+
+message TarjetaInfo {
+    string vuelo_id = 1;
+    string asiento = 2;
+    string cliente_id = 3;
+    int64 timestamp = 4;
+}
+
+message SincronizacionRequest {
+    EstadoDatanode estado_remitente = 1;
+    string datanode_origen = 2;
+}
+
+message SincronizacionResponse {
+    bool exito = 1;
+    string mensaje = 2;
+    EstadoDatanode estado_actualizado = 3;
+}
+
+message EstadoVueloRequest {
+    string vuelo_id = 1;
+    VectorClock version_cliente = 2;
+    string cliente_id = 3;
+}
+
+message EstadoVueloResponse {
+    bool exito = 1;
+    string mensaje = 2;
+    string vuelo_id = 3;
+    string estado = 4;
+    string puerta = 5;
+    VectorClock version_actual = 6;
+}
+
+message SolicitudVoto {
+    int32 termino = 1;
+    string candidato_id = 2;
+    int32 ultimo_indice_log = 3;
+    int32 ultimo_termino_log = 4;
+}
+
+message RespuestaVoto {
+    int32 termino = 1;
+    bool voto_concedido = 2;
+}
+
+message SolicitudAppendEntries {
+    int32 termino = 1;
+    string lider_id = 2;
+    int32 indice_previo = 3;
+    int32 termino_previo = 4;
+    repeated EntradaLog entradas = 5;
+    int32 commit_index = 6;
+}
+
+message RespuestaAppendEntries {
+    int32 termino = 1;
+    bool exito = 2;
+    int32 indice_coincidente = 3;
+}
+
+message PropuestaOperacion {
+    string tipo_operacion = 1;
+    string vuelo_id = 2;
+    string estado_vuelo = 3; 
+    string timestamp = 4;
+}
+
+message RespuestaPropuesta {
+    bool exito = 1;
+    string mensaje = 2;
+    string pista_asignada = 3; 
+    bool redirigir = 4;
+    string lider_actual = 5;  
+}
+
+message EntradaLog {
+    int32 indice = 1;
+    int32 termino = 2;
+    string comando = 3;
+}
+
+message SolicitudPista {
+    string vuelo_id = 1;
+    string pista_solicitada = 2;
+}
+
+message SolicitudLiberar {
+    string vuelo_id = 1;
+    string pista_id = 2;
+}
+
+message RespuestaPista {
+    bool exito = 1;
+    string mensaje = 2;
+    string pista_asignada = 3;
+    bool redirigir = 4;
+    string lider_actual = 5;
+    bool pista_ocupada = 6;
+}
