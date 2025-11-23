@@ -9,7 +9,7 @@ services:
       - "50052:50052"
     environment:
       - BROKER_HOST=10.35.168.23  # IP de MV1
-      - COORDINADOR_HOST=coordinador
+      - COORDINADOR_HOST=10.35.168.26
 
   # Datanode 2
   datanode2:
@@ -21,7 +21,7 @@ services:
       - "50059:50059"
     environment:
       - BROKER_HOST=10.35.168.23  # IP de MV1
-      - DATANODE_HOST=datanode2
+      - DATANODE_HOST=10.35.168.26
       - DATANODE1_HOST=10.35.168.25  # IP de MV3
       - DATANODE3_HOST=10.35.168.23  # IP de MV1
 
@@ -35,7 +35,7 @@ services:
       - "50063:50063"
     environment:
       - BROKER_HOST=10.35.168.23  # IP de MV1
-      - CONSENSO_HOST=consenso3
+      - CONSENSO_HOST=10.35.168.26
       - CONSENSO1_HOST=10.35.168.24  # IP de MV2
       - CONSENSO2_HOST=10.35.168.25  # IP de MV3
-      - CONSENSO3_HOST=consenso3
+      - CONSENSO3_HOST=10.35.168.26
