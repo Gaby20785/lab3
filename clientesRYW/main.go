@@ -15,6 +15,8 @@ import (
 	pb "lab3/clientesRYW/proto"
 )
 
+// Estructura del Cliente RYW, este cliente recuerda lo último que escribió
+// para poder confirmar que si lee seguido a escribir es consistente
 type ryvClient struct {
 	clientID          string
 	coordinadorConn   pb.AeroDistClient
@@ -25,6 +27,7 @@ type ryvClient struct {
 	estadoInicial     *pb.EstadoInicialResponse
 }
 
+// conectarConCoordinador - Se conecta con el coordinador
 func (c *ryvClient) conectarConCoordinador(address string) {
 	conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
@@ -34,6 +37,8 @@ func (c *ryvClient) conectarConCoordinador(address string) {
 	log.Printf("Conectado al coordinador en %s", address)
 }
 
+// registrarEnCoordinador - Llama a RegistrarEntidad del coordinador para que guarde que tipo de entidad es
+// y su dirección
 func (c *ryvClient) registrarEnCoordinador() {
 	ctx := context.Background()
 	
@@ -63,6 +68,8 @@ func (c *ryvClient) registrarEnCoordinador() {
 	log.Printf("Cliente %s registrado en coordinador", c.clientID)
 }
 
+// esperarInicio - Consulta al Coordinador continuamente si se puede iniciar la simulación,
+// cuando se llega a la cantidad de entidades requeridas se inicia la simulación
 func (c *ryvClient) esperarInicio() {
 	ctx := context.Background()
 	
@@ -87,6 +94,7 @@ func (c *ryvClient) esperarInicio() {
 	}
 }
 
+// solicitarEstadoInicial - Consulta los asientos disponibles de un vuelo al azar
 func (c *ryvClient) solicitarEstadoInicial() bool {
 	if len(c.vuelosDisponibles) == 0 {
 		log.Printf("No hay vuelos disponibles")
@@ -118,6 +126,8 @@ func (c *ryvClient) solicitarEstadoInicial() bool {
 	}
 }
 
+// realizarCheckIn - Hace el CheckIn para reservar un asiento, si tiene éxito recuerda la tarjeta
+// de embarque y el asiento que obtuvo
 func (c *ryvClient) realizarCheckIn() bool {
 	if c.estadoInicial == nil {
 		if !c.solicitarEstadoInicial() {
@@ -159,6 +169,8 @@ func (c *ryvClient) realizarCheckIn() bool {
 	}
 }
 
+// obtenerTarjetaEmbarque - Consulta la tarjeta de embarque y compara los datos obtenidos con los que
+// tiene en local para confirmar que está leyendo lo que escribió
 func (c *ryvClient) obtenerTarjetaEmbarque() bool {
 	if c.tarjetaEmbarqueID == "" {
 		log.Printf("No hay tarjeta de embarque para consultar")
@@ -216,6 +228,8 @@ func (c *ryvClient) obtenerTarjetaEmbarque() bool {
 	}
 }
 
+// ejecutarOperaciones - Consulta vuelos, realiza CheckIns y confirma el RYW constantemente con un tiempo
+// de espera entre la sucesión de acciones anterior
 func (c *ryvClient) ejecutarOperaciones() {
 	log.Printf("Cliente RYW %s iniciando", c.clientID)
 	time.Sleep(2 * time.Second)
@@ -241,6 +255,7 @@ func (c *ryvClient) ejecutarOperaciones() {
 	}
 }
 
+// cargarFlightUpdates - Carga los IDs de los vuelos disponibles
 func cargarFlightUpdates() []string {
     ruta := "flight_updates.csv"
 
@@ -282,6 +297,8 @@ func cargarFlightUpdates() []string {
     return vuelos
 }
 
+// main - Inicializa al cliente, se conecta con el Coordinador, espera a que pueda iniciar y se pone a
+// ejecutar la sucesión de operaciones de Consulta-CheckIn-Lectura-Verificación de RYW
 func main() {
 	clientPtr := flag.String("cliente", "RYW1", "ID del cliente (RYW1, RYW2, RYW3)")
 	flag.Parse()
@@ -306,4 +323,5 @@ func main() {
 	log.Printf("Cliente RYW %s completamente inicializado y operando", client.clientID)
 
 	select {}
+
 }
