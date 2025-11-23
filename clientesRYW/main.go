@@ -45,10 +45,16 @@ func (c *ryvClient) registrarEnCoordinador() {
 	default: puerto = "50053"
 	}
 
+	clienteHost := os.Getenv("CLIENTE_RYW_HOST")
+	if clienteHost == "" {
+		clienteHost = "localhost"
+	}
+	direccionCliente := clienteHost + ":" + puerto
+
 	_, err := c.coordinadorConn.RegistrarEntidad(ctx, &pb.RegistroRequest{
 		TipoEntidad: "cliente_ryw",
 		IdEntidad:   c.clientID,
-		Direccion:   "localhost:" + puerto,
+		Direccion:   direccionCliente,
 	})
 	if err != nil {
 		log.Fatalf("Error registrando cliente en coordinador: %v", err)
@@ -287,7 +293,12 @@ func main() {
 		vuelosDisponibles: vuelos,
 	}
 
-	client.conectarConCoordinador("localhost:50052")
+	coordinadorHost := os.Getenv("COORDINADOR_HOST")
+	if coordinadorHost == "" {
+		coordinadorHost = "localhost"
+	}
+
+	client.conectarConCoordinador(coordinadorHost + ":50052")
 	client.registrarEnCoordinador()
 	client.esperarInicio()
 	go client.ejecutarOperaciones()

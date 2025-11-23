@@ -1,0 +1,58 @@
+services:
+  # Broker
+  broker:
+    build:
+      context: .
+      dockerfile: broker/dockerfile
+    command: ["./broker/broker", "--broker=B1"]
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./flight_updates.csv:/app/flight_updates.csv
+    environment:
+      - BROKER_HOST=broker
+      - DATANODE1_HOST=172.24.69.53 # IP de MV3
+      - DATANODE2_HOST=172.24.69.53  # IP de MV4  
+      - DATANODE3_HOST=datanode3
+      - CONSENSO1_HOST=172.24.69.53  # IP de MV2
+      - CONSENSO2_HOST=172.24.69.53  # IP de MV3
+      - CONSENSO3_HOST=172.24.69.53  # IP de MV4
+
+  # Datanode 3
+  datanode3:
+    build:
+      context: .
+      dockerfile: datanodes/dockerfile
+    command: ["./datanodes/datanode", "--nodo=DN3"]
+    ports:
+      - "50060:50060"
+    environment:
+      - BROKER_HOST=broker
+      - DATANODE_HOST=datanode3
+      - DATANODE1_HOST=172.24.69.53  # IP de MV3
+      - DATANODE2_HOST=172.24.69.53  # IP de MV4
+
+  # Cliente RYW 1
+  cliente-ryw1:
+    build:
+      context: .
+      dockerfile: clientesRYW/dockerfile
+    command: ["./clientesRYW/cliente-ryw", "--cliente=RYW1"]
+    ports:
+      - "50053:50053"
+    environment:
+      - COORDINADOR_HOST=172.24.69.53  # IP de MV4
+      - BROKER_HOST=broker
+      - CLIENTE_RYW_HOST=cliente-ryw1
+
+  # Cliente MR 1
+  cliente-mr1:
+    build:
+      context: .
+      dockerfile: clientesMR/dockerfile
+    command: ["./clientesMR/cliente-mr", "--cliente=MR1"]
+    ports:
+      - "50056:50056"
+    environment:
+      - BROKER_HOST=broker
+      - CLIENTE_MR_HOST=cliente-mr1

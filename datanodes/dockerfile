@@ -1,0 +1,11 @@
+FROM golang:1.24.0 
+
+WORKDIR /app
+
+COPY . .
+
+RUN cd datanodes && go build -o datanode .
+
+EXPOSE 50058 50059 50060
+
+CMD ["./datanodes/datanode"]

@@ -1,0 +1,9 @@
+FROM golang:1.24.0 
+
+WORKDIR /app
+
+COPY . .
+
+RUN cd clientesRYW && go build -o cliente-ryw .
+
+CMD ["./clientesRYW/cliente-ryw"]

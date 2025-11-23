@@ -733,6 +733,30 @@ func (s *datanodeServer) inicializarRelojVectorial() {
 	s.vectorClock["broker"] = 0
 }
 
+func (s *datanodeServer) esperarInicio() {
+	ctx := context.Background()
+	
+	log.Printf("Datanode %s esperando autorización para iniciar...", s.datanodeID)
+	for {
+		resp, err := s.brokerConn.SolicitarInicio(ctx, &pb.InicioRequest{
+			TipoEntidad: "datanode",
+			IdEntidad:   s.datanodeID,
+		})
+		if err != nil {
+			log.Printf("Datanode %s: Error solicitando inicio: %v", s.datanodeID, err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		if resp.PuedeIniciar {
+			log.Printf("Datanode %s: ¡Puedo iniciar! %s", s.datanodeID, resp.Mensaje)
+			break
+		}
+
+		time.Sleep(3 * time.Second)
+	}
+}
+
 func main() {
 	datanodePtr := flag.String("nodo", "DN1", "ID del datanode (DN1, DN2, DN3)")
 	flag.Parse()
@@ -743,20 +767,38 @@ func main() {
 	switch *datanodePtr {
 	case "DN1": 
 		puerto = "50058"
-		knownNodes = []string{"localhost:50059", "localhost:50060"}
+		datanode2Host := os.Getenv("DATANODE2_HOST")
+		datanode3Host := os.Getenv("DATANODE3_HOST")
+		if datanode2Host == "" { datanode2Host = "localhost" }
+		if datanode3Host == "" { datanode3Host = "localhost" }
+		knownNodes = []string{datanode2Host + ":50059", datanode3Host + ":50060"}
 	case "DN2": 
 		puerto = "50059"
-		knownNodes = []string{"localhost:50058", "localhost:50060"}
+		datanode1Host := os.Getenv("DATANODE1_HOST")
+		datanode3Host := os.Getenv("DATANODE3_HOST")
+		if datanode1Host == "" { datanode1Host = "localhost" }
+		if datanode3Host == "" { datanode3Host = "localhost" }
+		knownNodes = []string{datanode1Host + ":50058", datanode3Host + ":50060"}
 	case "DN3": 
-		puerto = "50060" 
-		knownNodes = []string{"localhost:50058", "localhost:50059"}
+		puerto = "50060"
+		datanode1Host := os.Getenv("DATANODE1_HOST")
+		datanode2Host := os.Getenv("DATANODE2_HOST")
+		if datanode1Host == "" { datanode1Host = "localhost" }
+		if datanode2Host == "" { datanode2Host = "localhost" }
+		knownNodes = []string{datanode1Host + ":50058", datanode2Host + ":50059"}
 	default: 
 		puerto = "50058"
 		knownNodes = []string{}
 	}
 
 	vuelos := cargarFlightUpdates()
-	brokerConn := conectarConBroker("localhost:50051")
+	
+	brokerHost := os.Getenv("BROKER_HOST")
+	if brokerHost == "" {
+		brokerHost = "localhost"
+	}
+	brokerConn := conectarConBroker(brokerHost + ":50051")
+
 
 	datanode := &datanodeServer{
 		datanodeID:       *datanodePtr,
@@ -768,21 +810,26 @@ func main() {
 		knownNodes:       knownNodes,
 	}
 
-	datanode.inicializarRelojVectorial()
-	
-	datanode.inicializarEstado()
-
-	datanode.iniciarGossip()
-
 	ctx := context.Background()
+
+	datanodeHost := os.Getenv("DATANODE_HOST")
+	if datanodeHost == "" {
+		datanodeHost = "localhost"
+	}
+
 	_, err := brokerConn.RegistrarEntidad(ctx, &pb.RegistroRequest{
 		TipoEntidad: "datanode",
 		IdEntidad:   *datanodePtr,
-		Direccion:   "localhost:" + puerto,
+		Direccion:   datanodeHost + ":" + puerto,
 	})
 	if err != nil {
 		log.Fatalf("Error registrando datanode en broker: %v", err)
 	}
+
+	datanode.esperarInicio()
+	datanode.inicializarRelojVectorial()
+	datanode.inicializarEstado()
+	datanode.iniciarGossip()
 
 	lis, err := net.Listen("tcp", ":"+puerto)
 	if err != nil {

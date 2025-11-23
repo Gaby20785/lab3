@@ -86,10 +86,16 @@ func (c *mrClient) registrarEnBroker() {
 		puerto = "50056"
 	}
 
+	clienteHost := os.Getenv("CLIENTE_MR_HOST")
+	if clienteHost == "" {
+		clienteHost = "localhost"
+	}
+	direccionCliente := clienteHost + ":" + puerto
+
 	_, err := c.brokerConn.RegistrarEntidad(ctx, &pb.RegistroRequest{
 		TipoEntidad: "cliente_mr",
 		IdEntidad:   c.clientID,
-		Direccion:   "localhost:" + puerto,
+		Direccion:   direccionCliente + puerto,
 	})
 	if err != nil {
 		log.Fatalf("Cliente MR %s: Error registrando en broker: %v", c.clientID, err)
@@ -243,8 +249,11 @@ func main() {
 		vuelosDisponibles: []string{},
 		versionLocal: make(map[string]*pb.VectorClock),
 	}
-
-	client.conectarConBroker("localhost:50051")
+	brokerHost := os.Getenv("BROKER_HOST")
+	if brokerHost == "" {
+		brokerHost = "localhost"
+	}
+	client.conectarConBroker(brokerHost + ":50051")
 	client.registrarEnBroker()
 	client.esperarInicio()
 	go client.ejecutarConsultas()

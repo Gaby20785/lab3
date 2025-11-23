@@ -1,0 +1,40 @@
+services:
+  # Nodo Consenso 1
+  consenso1:
+    build:
+      context: .
+      dockerfile: nodosConsenso/dockerfile
+    command: ["./nodosConsenso/consenso", "--nodo=ATC1"]
+    ports:
+      - "50061:50061"
+    environment:
+      - BROKER_HOST=172.24.69.53  # IP de MV1
+      - CONSENSO_HOST=consenso1
+      - CONSENSO1_HOST=consenso1
+      - CONSENSO2_HOST=172.24.69.53  # IP de MV3
+      - CONSENSO3_HOST=172.24.69.53  # IP de MV4
+
+  # Cliente RYW 2
+  cliente-ryw2:
+    build:
+      context: .
+      dockerfile: clientesRYW/dockerfile
+    command: ["./clientesRYW/cliente-ryw", "--cliente=RYW2"]
+    ports:
+      - "50054:50054"
+    environment:
+      - COORDINADOR_HOST=172.24.69.53  # IP de MV4
+      - BROKER_HOST=172.24.69.53  # IP de MV1
+      - CLIENTE_RYW_HOST=cliente-ryw2
+
+  # Cliente MR 2
+  cliente-mr2:
+    build:
+      context: .
+      dockerfile: clientesMR/dockerfile
+    command: ["./clientesMR/cliente-mr", "--cliente=MR2"]
+    ports:
+      - "50057:50057"
+    environment:
+      - BROKER_HOST=172.24.69.53 # IP de MV1
+      - CLIENTE_MR_HOST=cliente-mr2

@@ -1,0 +1,11 @@
+FROM golang:1.24.0 
+
+WORKDIR /app
+
+COPY . .
+
+RUN cd broker && go build -o broker .
+
+EXPOSE 50051
+
+CMD ["./broker/broker"]

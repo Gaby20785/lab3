@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 	"strings"
+	"os"
 
 	"google.golang.org/grpc"
 
@@ -87,11 +88,17 @@ func (n *NodoConsenso) conectarConBroker(address string) {
 
 func (n *NodoConsenso) registrarEnBroker() {
 	ctx := context.Background()
+
+	consensoHost := os.Getenv("CONSENSO_HOST")
+	if consensoHost == "" {
+		consensoHost = "localhost"
+	}
+	direccionConsenso := consensoHost + ":" + n.puerto
 	
 	_, err := n.brokerConn.RegistrarEntidad(ctx, &pb.RegistroRequest{
 		TipoEntidad: "nodo_consenso",
 		IdEntidad:   n.id,
-		Direccion:   "localhost:" + n.puerto,
+		Direccion:   direccionConsenso,
 	})
 	if err != nil {
 		log.Fatalf("%s: Error registrando en broker: %v", n.id, err)
@@ -791,10 +798,22 @@ func (n *NodoConsenso) enviarHeartbeat(objetivoID string) {
 
 func (n *NodoConsenso) obtenerDireccionPorID(id string) string {
 	switch id {
-	case "ATC1": return "localhost:50061"
-	case "ATC2": return "localhost:50062"  
-	case "ATC3": return "localhost:50063"
-	default: return "localhost:50061"
+	case "ATC1": 
+		host := os.Getenv("CONSENSO1_HOST")
+		if host == "" { host = "localhost" }
+		return host + ":50061"
+	case "ATC2": 
+		host := os.Getenv("CONSENSO2_HOST")
+		if host == "" { host = "localhost" }
+		return host + ":50062"  
+	case "ATC3": 
+		host := os.Getenv("CONSENSO3_HOST")
+		if host == "" { host = "localhost" }
+		return host + ":50063"
+	default: 
+		host := os.Getenv("CONSENSO1_HOST")
+		if host == "" { host = "localhost" }
+		return host + ":50061"
 	}
 }
 
@@ -868,7 +887,12 @@ func main() {
 
 	nodo := NuevoNodoConsenso(*nodoPtr, puerto)
 
-	nodo.conectarConBroker("localhost:50051")
+	brokerHost := os.Getenv("BROKER_HOST")
+	if brokerHost == "" {
+		brokerHost = "localhost"
+	}
+	nodo.conectarConBroker(brokerHost + ":50051")
+	
 	nodo.registrarEnBroker()
 	nodo.esperarInicio()
 

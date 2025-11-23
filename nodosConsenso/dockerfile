@@ -1,0 +1,11 @@
+FROM golang:1.24.0 
+
+WORKDIR /app
+
+COPY . .
+
+RUN cd nodosConsenso && go build -o consenso .
+
+EXPOSE 50061 50062 50063
+
+CMD ["./nodosConsenso/consenso"]

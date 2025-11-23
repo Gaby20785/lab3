@@ -83,7 +83,7 @@ func (s *brokerServer) procesarOperacionPista(update FlightUpdate) {
 func (s *brokerServer) asignarPistaConsenso(vueloID, pistaSolicitada string) {
     log.Printf("Broker: Solicitando pista %s para %s", pistaSolicitada, vueloID)
     
-    nodos := []string{"localhost:50061", "localhost:50062", "localhost:50063"}
+    nodos := []string{os.Getenv("CONSENSO1_HOST") + ":50061", os.Getenv("CONSENSO2_HOST") + ":50062", os.Getenv("CONSENSO3_HOST") + ":50063"}
     intento := 0
     
     for _, nodoAddr := range nodos {
@@ -106,7 +106,7 @@ func (s *brokerServer) asignarPistaConsenso(vueloID, pistaSolicitada string) {
 }
 
 func (s *brokerServer) liberarPistaConsenso(vueloID string) {
-    nodos := []string{"localhost:50061", "localhost:50062", "localhost:50063"}
+    nodos := []string{os.Getenv("CONSENSO1_HOST") + ":50061", os.Getenv("CONSENSO2_HOST") + ":50062", os.Getenv("CONSENSO3_HOST") + ":50063"}
     
     for _, nodoAddr := range nodos {
         exito := s.enviarLiberarPista(nodoAddr, vueloID)
@@ -140,11 +140,24 @@ func (s *brokerServer) enviarAsignacionPista(nodoAddr, vueloID, pistaSolicitada 
     }
 
     if resp.Redirigir && resp.LiderActual != "" {
-        liderAddr := "localhost:" + resp.LiderActual
+        liderAddr := s.obtenerHostPorPuerto(resp.LiderActual) + ":" + resp.LiderActual
         return s.enviarAsignacionPista(liderAddr, vueloID, pistaSolicitada)
     }
 
     return resp.PistaAsignada, resp.Exito, resp.PistaOcupada
+}
+
+func (s *brokerServer) obtenerHostPorPuerto(puerto string) string {
+    mapeo := map[string]string{
+        "50061": os.Getenv("CONSENSO1_HOST"),
+        "50062": os.Getenv("CONSENSO2_HOST"), 
+        "50063": os.Getenv("CONSENSO3_HOST"),
+    }
+    
+    if host, existe := mapeo[puerto]; existe && host != "" {
+        return host
+    }
+    return "localhost"
 }
 
 func (s *brokerServer) enviarLiberarPista(nodoAddr, vueloID string) bool {
@@ -168,7 +181,7 @@ func (s *brokerServer) enviarLiberarPista(nodoAddr, vueloID string) bool {
     }
 
     if resp.Redirigir && resp.LiderActual != "" {
-        liderAddr := "localhost:" + resp.LiderActual
+        liderAddr := s.obtenerHostPorPuerto(resp.LiderActual) + ":" + resp.LiderActual
         return s.enviarLiberarPista(liderAddr, vueloID)
     }
 

@@ -8,6 +8,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"os"
 
 	"google.golang.org/grpc"
 
@@ -230,10 +231,17 @@ func (s *coordinadorServer) ObtenerTarjetaEmbarque(ctx context.Context, req *pb.
 
 func (s *coordinadorServer) registrarEnBroker() {
 	ctx := context.Background()
+
+	coordinadorHost := os.Getenv("COORDINADOR_HOST")
+	if coordinadorHost == "" {
+		coordinadorHost = "localhost"
+	}
+	direccionCoordinador := coordinadorHost + ":50052"
+
 	_, err := s.brokerConn.RegistrarEntidad(ctx, &pb.RegistroRequest{
 		TipoEntidad: "coordinador",
 		IdEntidad:   s.coordinadorID,
-		Direccion:   "localhost:50052",
+		Direccion:   direccionCoordinador,
 	})
 	if err != nil {
 		log.Printf("Error registrando coordinador en broker: %v", err)
@@ -256,7 +264,11 @@ func main() {
 	coordinadorID := flag.String("coordinador", "C1", "ID del coordinador")
 	flag.Parse()
 
-	brokerConn := conectarConBroker("localhost:50051")
+	brokerHost := os.Getenv("BROKER_HOST")
+	if brokerHost == "" {
+		brokerHost = "localhost"
+	}
+	brokerConn := conectarConBroker(brokerHost + ":50051")
 
 	coordinador := &coordinadorServer{
 		clientesRYWConectados: make(map[string]bool),

@@ -1,0 +1,9 @@
+FROM golang:1.24.0 
+
+WORKDIR /app
+
+COPY . .
+
+RUN cd clientesMR && go build -o cliente-mr .
+
+CMD ["./clientesMR/cliente-mr"]
