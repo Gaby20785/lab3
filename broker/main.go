@@ -99,6 +99,8 @@ func (s *brokerServer) iniciarSimulacion() {
 func (s *brokerServer) asignarPistasIniciales() {
     log.Printf("Broker: Asignando pistas iniciales a %d vuelos", len(s.vuelosDisponibles))
     
+	time.Sleep(4*time.Second)
+
     for i, vueloID := range s.vuelosDisponibles {
         if i >= 20 {
             log.Printf("broker: Más de 20 vuelos, no hay pistas para %s", vueloID)
@@ -123,37 +125,48 @@ func (s *brokerServer) procesarOperacionPista(update FlightUpdate) {
     }
 }
 
-func (s *brokerServer) asignarPistaConsenso(vueloID, pistaSolicitada string) {
+func (s *brokerServer) asignarPistaConsenso(vueloID, pistaSolicitada string) bool {
     var logs []string
-	log.Printf("Broker: Solicitando pista %s para %s", pistaSolicitada, vueloID)
-	logs = append(logs, fmt.Sprintf("[%s] Solicitando pista %s para %s",
-		time.Now().Format("2006/01/02 15:04:05"), pistaSolicitada, vueloID))
+    log.Printf("Broker: Solicitando pista %s para %s", pistaSolicitada, vueloID)
+    logs = append(logs, fmt.Sprintf("[%s] Solicitando pista %s para %s",
+        time.Now().Format("2006/01/02 15:04:05"), pistaSolicitada, vueloID))
     
     nodos := []string{os.Getenv("CONSENSO1_HOST") + ":50061", os.Getenv("CONSENSO2_HOST") + ":50062", os.Getenv("CONSENSO3_HOST") + ":50063"}
-    intento := 0
     
-    for _, nodoAddr := range nodos {
-        pista, exito, pistaOcupada := s.enviarAsignacionPista(nodoAddr, vueloID, pistaSolicitada)
+    for intento := 0; intento < 5; intento++ {
+        log.Printf("Broker: Intento %d/5 para asignar pista a %s", intento+1, vueloID)
         
-        if exito {
-            log.Printf("Broker: Pista %s asignada a %s", pista, vueloID)
-			logs = append(logs, fmt.Sprintf("[%s] Pista %s asignada a %s",
-				time.Now().Format("2006/01/02 15:04:05"), pista, vueloID))
-			s.GuardarLogs("output/Reporte.txt", logs)
-            return
+        for _, nodoAddr := range nodos {
+            pista, exito, pistaOcupada := s.enviarAsignacionPista(nodoAddr, vueloID, pistaSolicitada)
+            
+            if exito {
+                log.Printf("Broker: Pista %s asignada a %s", pista, vueloID)
+                logs = append(logs, fmt.Sprintf("[%s] Pista %s asignada a %s",
+                    time.Now().Format("2006/01/02 15:04:05"), pista, vueloID))
+                s.GuardarLogs("output/Reporte.txt", logs)
+                return true
+            }
+            
+            if pistaOcupada {
+                log.Printf("Broker: Pista %s ocupada, intento %d/5", pistaSolicitada, intento+1)
+                logs = append(logs, fmt.Sprintf("[%s] Pista %s ocupada, intento %d",
+                    time.Now().Format("2006/01/02 15:04:05"), pistaSolicitada, intento+1))
+                pistaSolicitada = fmt.Sprintf("PISTA_%02d", rand.Intn(20)+1)
+				time.Sleep(500* time.Millisecond)
+                break
+            }
         }
         
-        if pistaOcupada {
-            log.Printf("Broker: Pista %s ocupada, intento %d/%d", pistaSolicitada, intento+1)
-			logs = append(logs, fmt.Sprintf("[%s] Pista %s ocupada, intento %d",
-				time.Now().Format("2006/01/02 15:04:05"), pistaSolicitada, intento+1))
-            pistaSolicitada = fmt.Sprintf("PISTA_%02d", rand.Intn(20)+1)
-            break
+        if intento < 2 {
+            time.Sleep(100 * time.Millisecond)
         }
     }
-    intento++
-    time.Sleep(100 * time.Millisecond)
+    
+    log.Printf("Broker: No se pudo asignar pista a %s después de 5 intentos", vueloID)
+    logs = append(logs, fmt.Sprintf("[%s] FALLA: No se pudo asignar pista a %s después de 5 intentos",
+        time.Now().Format("2006/01/02 15:04:05"), vueloID))
     s.GuardarLogs("output/Reporte.txt", logs)
+    return false
 }
 
 func (s *brokerServer) liberarPistaConsenso(vueloID string) {

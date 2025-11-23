@@ -32,19 +32,19 @@ build-mv4: proto
 
 # Ejecución de las 4 máquinas virtuales
 mv1: build-mv1
-	@echo "🚀 Iniciando MV1: Broker + Datanode3 + ClienteRYW1 + ClienteMR1"
+	@echo "Iniciando MV1: Broker + Datanode3 + ClienteRYW1 + ClienteMR1"
 	docker compose -f docker-compose.mv1.yml up
 
 mv2: build-mv2
-	@echo "🚀 Iniciando MV2: Consenso1 + ClienteRYW2 + ClienteMR2"
+	@echo "Iniciando MV2: Consenso1 + ClienteRYW2 + ClienteMR2"
 	docker compose -f docker-compose.mv2.yml up
 
 mv3: build-mv3
-	@echo "🚀 Iniciando MV3: Datanode1 + Consenso2 + ClienteRYW3"
+	@echo "Iniciando MV3: Datanode1 + Consenso2 + ClienteRYW3"
 	docker compose -f docker-compose.mv3.yml up
 
 mv4: build-mv4
-	@echo "🚀 Iniciando MV4: Coordinador + Datanode2 + Consenso3"
+	@echo "Iniciando MV4: Coordinador + Datanode2 + Consenso3"
 	docker compose -f docker-compose.mv4.yml up
 
 # Ejecución sin build
@@ -62,7 +62,7 @@ start-mv4:
 
 # Sistema completo (en terminales separadas)
 start-all: 
-	@echo "⚠️  Ejecutar en terminales separadas:"
+	@echo "Ejecutar en terminales separadas:"
 	@echo "make mv1"
 	@echo "make mv2" 
 	@echo "make mv3"
@@ -83,7 +83,7 @@ logs-mv4:
 
 # Limpieza
 clean:
-	@echo "🧹 Limpiando contenedores..."
+	@echo "Limpiando contenedores..."
 	docker compose -f docker-compose.mv1.yml down -v
 	docker compose -f docker-compose.mv2.yml down -v
 	docker compose -f docker-compose.mv3.yml down -v
@@ -92,5 +92,5 @@ clean:
 stop-all: clean
 
 clean-all: clean
-	@echo "🧹 Limpiando imágenes..."
+	@echo "Limpiando imágenes..."
 	docker image prune -f

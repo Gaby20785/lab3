@@ -14,12 +14,12 @@ services:
     tty: true
     environment:
       - BROKER_HOST=broker
-      - DATANODE1_HOST=172.24.69.53 # IP de MV3
-      - DATANODE2_HOST=172.24.69.53  # IP de MV4  
+      - DATANODE1_HOST=10.35.168.25 # IP de MV3
+      - DATANODE2_HOST=10.35.168.26  # IP de MV4  
       - DATANODE3_HOST=datanode3
-      - CONSENSO1_HOST=172.24.69.53  # IP de MV2
-      - CONSENSO2_HOST=172.24.69.53  # IP de MV3
-      - CONSENSO3_HOST=172.24.69.53  # IP de MV4
+      - CONSENSO1_HOST=10.35.168.24  # IP de MV2
+      - CONSENSO2_HOST=10.35.168.25  # IP de MV3
+      - CONSENSO3_HOST=10.35.168.26  # IP de MV4
 
   # Datanode 3
   datanode3:
@@ -34,8 +34,8 @@ services:
     environment:
       - BROKER_HOST=broker
       - DATANODE_HOST=datanode3
-      - DATANODE1_HOST=172.24.69.53  # IP de MV3
-      - DATANODE2_HOST=172.24.69.53  # IP de MV4
+      - DATANODE1_HOST=10.35.168.25  # IP de MV3
+      - DATANODE2_HOST=10.35.168.26  # IP de MV4
 
   # Cliente RYW 1
   cliente-ryw1:
@@ -48,7 +48,7 @@ services:
     depends_on:
       - broker
     environment:
-      - COORDINADOR_HOST=172.24.69.53  # IP de MV4
+      - COORDINADOR_HOST=10.35.168.26  # IP de MV4
       - BROKER_HOST=broker
       - CLIENTE_RYW_HOST=cliente-ryw1
 
