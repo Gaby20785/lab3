@@ -21,6 +21,7 @@ import (
 type brokerServer struct {
 	pb.UnimplementedAeroDistServer
 	mu sync.RWMutex
+	fileMutex           sync.Mutex
 	entidadesConectadas map[string]string
 	todosListos         bool
 	vuelosDisponibles   []string
@@ -35,6 +36,48 @@ type FlightUpdate struct {
 	FlightID    string
 	UpdateType  string
 	UpdateValue string
+}
+
+// CrearReporte - Crea el archivo Reporte.txt para escribir los logs criticos
+// (asignación y liberación de pistas)
+func CrearReporte(nombreArchivo string) {
+	archivo, err := os.Create(nombreArchivo)
+	if err != nil {
+		log.Fatalf("Error crítico al crear el archivo de reporte: %v", err)
+	}
+	defer archivo.Close()
+
+	header := fmt.Sprintf("=== Inicio del Reporte del Broker - %s ===\n", time.Now().Format("2006/01/02 15:04:05"))
+	if _, err := archivo.WriteString(header); err != nil {
+		log.Printf("Error escribiendo cabecera del reporte: %v", err)
+	}
+
+	log.Printf("Archivo %s creado e inicializado correctamente.", nombreArchivo)
+}
+
+// GuardarLogs - Guarda los logs criticos con una subrutina, estos logs se escriben uno a la vez
+// en el reporte
+func (s *brokerServer) GuardarLogs(nombreArchivo string, logs []string) {
+	logsCopy := make([]string, len(logs))
+	copy(logsCopy, logs)
+
+	go func() {
+		s.fileMutex.Lock()
+		defer s.fileMutex.Unlock()
+
+		archivo, err := os.OpenFile(nombreArchivo, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			log.Printf("Error crítico guardando logs: %v", err)
+			return
+		}
+		defer archivo.Close()
+
+		for _, linea := range logsCopy {
+			if _, err := archivo.WriteString(linea + "\n"); err != nil {
+				log.Printf("Error escribiendo línea: %v", err)
+			}
+		}
+	}()
 }
 
 func (s *brokerServer) cargarVuelos() {
@@ -81,7 +124,10 @@ func (s *brokerServer) procesarOperacionPista(update FlightUpdate) {
 }
 
 func (s *brokerServer) asignarPistaConsenso(vueloID, pistaSolicitada string) {
-    log.Printf("Broker: Solicitando pista %s para %s", pistaSolicitada, vueloID)
+    var logs []string
+	log.Printf("Broker: Solicitando pista %s para %s", pistaSolicitada, vueloID)
+	logs = append(logs, fmt.Sprintf("[%s] Solicitando pista %s para %s",
+		time.Now().Format("2006/01/02 15:04:05"), pistaSolicitada, vueloID))
     
     nodos := []string{os.Getenv("CONSENSO1_HOST") + ":50061", os.Getenv("CONSENSO2_HOST") + ":50062", os.Getenv("CONSENSO3_HOST") + ":50063"}
     intento := 0
@@ -91,32 +137,47 @@ func (s *brokerServer) asignarPistaConsenso(vueloID, pistaSolicitada string) {
         
         if exito {
             log.Printf("Broker: Pista %s asignada a %s", pista, vueloID)
+			logs = append(logs, fmt.Sprintf("[%s] Pista %s asignada a %s",
+				time.Now().Format("2006/01/02 15:04:05"), pista, vueloID))
+			s.GuardarLogs("Reporte.txt", logs)
             return
         }
         
         if pistaOcupada {
             log.Printf("Broker: Pista %s ocupada, intento %d/%d", pistaSolicitada, intento+1)
+			logs = append(logs, fmt.Sprintf("[%s] Pista %s ocupada, intento %d",
+				time.Now().Format("2006/01/02 15:04:05"), pistaSolicitada, intento+1))
             pistaSolicitada = fmt.Sprintf("PISTA_%02d", rand.Intn(20)+1)
             break
         }
     }
     intento++
     time.Sleep(100 * time.Millisecond)
-    
+    s.GuardarLogs("Reporte.txt", logs)
 }
 
 func (s *brokerServer) liberarPistaConsenso(vueloID string) {
+	var logs []string
     nodos := []string{os.Getenv("CONSENSO1_HOST") + ":50061", os.Getenv("CONSENSO2_HOST") + ":50062", os.Getenv("CONSENSO3_HOST") + ":50063"}
-    
+    logs = append(logs, fmt.Sprintf("[%s] Intentando liberar pista de %s",
+		time.Now().Format("2006/01/02 15:04:05"), vueloID))
+	
     for _, nodoAddr := range nodos {
         exito := s.enviarLiberarPista(nodoAddr, vueloID)
         if exito {
             log.Printf("Broker: Pista liberada de %s", vueloID)
+			logs = append(logs, fmt.Sprintf("[%s] Pista liberada de %s",
+				time.Now().Format("2006/01/02 15:04:05"), vueloID))
+
+			s.GuardarLogs("Reporte.txt", logs)
             return
         }
     }
     
     log.Printf("Broker: No se pudo liberar pista de %s", vueloID)
+	logs = append(logs, fmt.Sprintf("[%s] No se pudo liberar pista de %s",
+		time.Now().Format("2006/01/02 15:04:05"), vueloID))
+	s.GuardarLogs("Reporte.txt", logs)
 }
 
 func (s *brokerServer) enviarAsignacionPista(nodoAddr, vueloID, pistaSolicitada string) (string, bool, bool) {
@@ -702,7 +763,7 @@ func main() {
 
 	broker.vectorClock["broker"] = 0
 	broker.cargarVuelos()
-
+	CrearReporte("Reporte.txt")
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
@@ -719,4 +780,5 @@ func main() {
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}
+
 }
