@@ -13,10 +13,10 @@ services:
     stdin_open: true
     tty: true
     environment:
-      - BROKER_HOST=broker
+      - BROKER_HOST=10.35.168.23
       - DATANODE1_HOST=10.35.168.25 # IP de MV3
       - DATANODE2_HOST=10.35.168.26  # IP de MV4  
-      - DATANODE3_HOST=datanode3
+      - DATANODE3_HOST=10.35.168.23
       - CONSENSO1_HOST=10.35.168.24  # IP de MV2
       - CONSENSO2_HOST=10.35.168.25  # IP de MV3
       - CONSENSO3_HOST=10.35.168.26  # IP de MV4
@@ -32,8 +32,8 @@ services:
     depends_on:
       - broker
     environment:
-      - BROKER_HOST=broker
-      - DATANODE_HOST=datanode3
+      - BROKER_HOST=10.35.168.23
+      - DATANODE_HOST=10.35.168.23
       - DATANODE1_HOST=10.35.168.25  # IP de MV3
       - DATANODE2_HOST=10.35.168.26  # IP de MV4
 
@@ -49,8 +49,8 @@ services:
       - broker
     environment:
       - COORDINADOR_HOST=10.35.168.26  # IP de MV4
-      - BROKER_HOST=broker
-      - CLIENTE_RYW_HOST=cliente-ryw1
+      - BROKER_HOST=10.35.168.23
+      - CLIENTE_RYW_HOST=10.35.168.23
 
   # Cliente MR 1
   cliente-mr1:
@@ -63,5 +63,5 @@ services:
     depends_on:
       - broker
     environment:
-      - BROKER_HOST=broker
-      - CLIENTE_MR_HOST=cliente-mr1
+      - BROKER_HOST=10.35.168.23
+      - CLIENTE_MR_HOST=10.35.168.23
