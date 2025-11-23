@@ -9,8 +9,8 @@ services:
       - "50061:50061"
     environment:
       - BROKER_HOST=10.35.168.23  # IP de MV1
-      - CONSENSO_HOST=consenso1
-      - CONSENSO1_HOST=consenso1
+      - CONSENSO_HOST=10.35.168.24
+      - CONSENSO1_HOST=10.35.168.24
       - CONSENSO2_HOST=10.35.168.25  # IP de MV3
       - CONSENSO3_HOST=10.35.168.26  # IP de MV4
 
@@ -25,7 +25,7 @@ services:
     environment:
       - COORDINADOR_HOST=10.35.168.26  # IP de MV4
       - BROKER_HOST=10.35.168.23  # IP de MV1
-      - CLIENTE_RYW_HOST=cliente-ryw2
+      - CLIENTE_RYW_HOST=10.35.168.24
 
   # Cliente MR 2
   cliente-mr2:
@@ -37,4 +37,5 @@ services:
       - "50057:50057"
     environment:
       - BROKER_HOST=10.35.168.23 # IP de MV1
-      - CLIENTE_MR_HOST=cliente-mr2
+
+      - CLIENTE_MR_HOST=10.35.168.24
