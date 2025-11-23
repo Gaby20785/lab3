@@ -18,6 +18,11 @@ import (
 	pb "lab3/broker/proto"
 )
 
+// Broker del sistema que almacena la información relevante para
+// guardar los clientes con sus nodos (sticky session),
+// guardar las direcciones de las entidades conectadas
+// y tener los datos relevantes de la simulación.
+// Además de tener un VectorClock para mantener la consistencia causal
 type brokerServer struct {
 	pb.UnimplementedAeroDistServer
 	mu sync.RWMutex
@@ -31,6 +36,7 @@ type brokerServer struct {
 	vectorClock         map[string]int32
 }
 
+// Estructura para guardar los datos obtenidos del csv
 type FlightUpdate struct {
 	SimTimeSec  int64
 	FlightID    string
@@ -80,11 +86,14 @@ func (s *brokerServer) GuardarLogs(nombreArchivo string, logs []string) {
 	}()
 }
 
+// cargarVuelos - Llama a la función cargarFlightUpdates para cargar los vuelos únicos a memoria
 func (s *brokerServer) cargarVuelos() {
 	s.vuelosDisponibles = cargarFlightUpdates()
 	log.Printf("Broker: Lista de vuelos cargada - %d vuelos únicos", len(s.vuelosDisponibles))
 }
 
+// iniciarSimulacion - Espera a que los nodos necesarios para la simulación esten conectados
+// para poder asignar las pistas iniciales y cargar los eventos que están en el csv
 func (s *brokerServer) iniciarSimulacion() {
 	s.esperarConexion()
 	
@@ -96,6 +105,8 @@ func (s *brokerServer) iniciarSimulacion() {
 	s.enviarEventos(events)
 }
 
+// asignarPistasIniciales - A los primeros 20 vuelos intenta asignarle una pista enviando
+// una solicitud a los nodos de consenso
 func (s *brokerServer) asignarPistasIniciales() {
     log.Printf("Broker: Asignando pistas iniciales a %d vuelos", len(s.vuelosDisponibles))
     
@@ -113,6 +124,8 @@ func (s *brokerServer) asignarPistasIniciales() {
     }
 }
 
+// procesarOperacionPista - Envía una solicitud a los nodos de consenso si se
+// quiere hacer un cambio de puerta, esto para reasignar la pista del vuelo
 func (s *brokerServer) procesarOperacionPista(update FlightUpdate) {
     if update.UpdateType == "puerta" {
         log.Printf("Broker: Vuelo %s cambió a puerta %s - reasignando pista", 
@@ -125,6 +138,8 @@ func (s *brokerServer) procesarOperacionPista(update FlightUpdate) {
     }
 }
 
+// asignarPistaConsenso - Solicita una pista para un vuelo, si la pista está ocupada
+// genera una pista random e intenta solicitarla, se repite esto hasta conseguir una pista
 func (s *brokerServer) asignarPistaConsenso(vueloID, pistaSolicitada string) bool {
     var logs []string
     log.Printf("Broker: Solicitando pista %s para %s", pistaSolicitada, vueloID)
@@ -169,6 +184,7 @@ func (s *brokerServer) asignarPistaConsenso(vueloID, pistaSolicitada string) boo
     return false
 }
 
+// liberarPistaConsenso - Envía una solicitud para liberar una pista a los nodos de consenso
 func (s *brokerServer) liberarPistaConsenso(vueloID string) {
 	var logs []string
     nodos := []string{os.Getenv("CONSENSO1_HOST") + ":50061", os.Getenv("CONSENSO2_HOST") + ":50062", os.Getenv("CONSENSO3_HOST") + ":50063"}
@@ -193,6 +209,8 @@ func (s *brokerServer) liberarPistaConsenso(vueloID string) {
 	s.GuardarLogs("output/Reporte.txt", logs)
 }
 
+// enviarAsignacionPista - Envía la solicitud de AsignarPista a un nodo, si este no es el líder
+// redirige la solicitud al que si lo es, la dirección del líder lo obtiene de la primera respuesta
 func (s *brokerServer) enviarAsignacionPista(nodoAddr, vueloID, pistaSolicitada string) (string, bool, bool) {
     conn, err := grpc.Dial(nodoAddr, grpc.WithInsecure(), grpc.WithTimeout(3*time.Second))
     if err != nil {
@@ -221,6 +239,7 @@ func (s *brokerServer) enviarAsignacionPista(nodoAddr, vueloID, pistaSolicitada 
     return resp.PistaAsignada, resp.Exito, resp.PistaOcupada
 }
 
+// obtenerHostPorPuerto - Obtiene el host de un nodo de consenso sabiendo su puerto
 func (s *brokerServer) obtenerHostPorPuerto(puerto string) string {
     mapeo := map[string]string{
         "50061": os.Getenv("CONSENSO1_HOST"),
@@ -234,6 +253,8 @@ func (s *brokerServer) obtenerHostPorPuerto(puerto string) string {
     return "localhost"
 }
 
+// enviarLiberarPista - Envía la solicitud de LiberarPista a un nodo, si este no es el líder
+// redirige la solicitud al que si lo es, la dirección del líder lo obtiene de la primera respuesta
 func (s *brokerServer) enviarLiberarPista(nodoAddr, vueloID string) bool {
     conn, err := grpc.Dial(nodoAddr, grpc.WithInsecure(), grpc.WithTimeout(3*time.Second))
     if err != nil {
@@ -262,6 +283,8 @@ func (s *brokerServer) enviarLiberarPista(nodoAddr, vueloID string) bool {
     return resp.Exito
 }
 
+// esperarConexion - Espera hasta que la cantidad de entidades conectadas sea 9, esto para
+// aumentar la seguridad y que no inicie con entidades faltantes
 func (s *brokerServer) esperarConexion() {
 	log.Printf("Broker: Esperando conexión de todas las entidades...")
 	
@@ -283,6 +306,7 @@ func (s *brokerServer) esperarConexion() {
 	}
 }
 
+// cargarEventos - Carga los eventos como FlightUpdate para ser usados en la simulación
 func (s *brokerServer) cargarEventos() []FlightUpdate {
 	file, err := os.Open("flight_updates.csv")
 	if err != nil {
@@ -324,6 +348,7 @@ func (s *brokerServer) cargarEventos() []FlightUpdate {
 	return events
 }
 
+// enviarEventos - Envia las actualizaciones de eventos a los Datanodes y a los nodos de contexto
 func (s *brokerServer) enviarEventos(events []FlightUpdate) {
 	log.Printf("Broker: Iniciando envío de %d eventos", len(events))
 	
@@ -356,6 +381,7 @@ func (s *brokerServer) enviarEventos(events []FlightUpdate) {
 	log.Printf("Broker: Simulación completada! Tiempo total: %v", totalTime)
 }
 
+// actualizarLosDatanodes - Envía una actualización a todos los datanodes
 func (s *brokerServer) actualizarLosDatanodes(update FlightUpdate) {
 	s.mu.RLock()
 	datanodes := make([]string, len(s.datanodes))
@@ -390,6 +416,7 @@ func (s *brokerServer) actualizarLosDatanodes(update FlightUpdate) {
 	wg.Wait()
 }
 
+// actualizarDatanode - Se conecta y envía una actualización a un Datanode individual
 func (s *brokerServer) actualizarDatanode(datanodeAddr string, update FlightUpdate, reloj *pb.VectorClock) {
 	conn, err := grpc.Dial(datanodeAddr, grpc.WithInsecure())
 	if err != nil {
@@ -414,6 +441,7 @@ func (s *brokerServer) actualizarDatanode(datanodeAddr string, update FlightUpda
 	}
 }
 
+// RegistrarEntidad - Registra las entidades que se conectan con el broker, guarda su tipo de entidad y su dirección
 func (s *brokerServer) RegistrarEntidad(ctx context.Context, req *pb.RegistroRequest) (*pb.RegistroResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -432,6 +460,8 @@ func (s *brokerServer) RegistrarEntidad(ctx context.Context, req *pb.RegistroReq
 	}, nil
 }
 
+// SolicitarInicio - Cuando una entidad solicita inciar el Broker le responde que "si" en el caso
+// de tener conectadas las 9 entidades requeridas, en caso contrario responde con un "no"
 func (s *brokerServer) SolicitarInicio(ctx context.Context, req *pb.InicioRequest) (*pb.InicioResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -459,6 +489,8 @@ func (s *brokerServer) SolicitarInicio(ctx context.Context, req *pb.InicioReques
 	}, nil
 }
 
+// ObtenerEstadoVuelo - Cuando un cliente consulta el estado de un vuelo el Broker, este
+// le pregunta a un Datanode, con la respuesta del Datanode responde al cliente y se actualiza el reloj del Broker
 func (s *brokerServer) ObtenerEstadoVuelo(ctx context.Context, req *pb.EstadoVueloRequest) (*pb.EstadoVueloResponse, error) {
 	log.Printf("Broker: Cliente MR %s consulta estado del vuelo %s", req.ClienteId, req.VueloId)
 	
@@ -526,6 +558,8 @@ func (s *brokerServer) ObtenerEstadoVuelo(ctx context.Context, req *pb.EstadoVue
 	}, nil
 }
 
+// ObtenerEstadoInicial - Cuando un cliente solicita ver los asientos disponibles el Broker
+// conecta con el Datanode asignado a ese cliente (sticky session) para conseguir la información
 func (s *brokerServer) ObtenerEstadoInicial(ctx context.Context, req *pb.EstadoInicialRequest) (*pb.EstadoInicialResponse, error) {
 	log.Printf("Broker procesa ObtenerEstadoInicial para cliente %s, vuelo %s", req.ClienteId, req.VueloId)
 	
@@ -581,6 +615,8 @@ func (s *brokerServer) ObtenerEstadoInicial(ctx context.Context, req *pb.EstadoI
 	}, nil
 }
 
+// RealizarCheckIn - Cuando un cliente solicita reservar un asiento se le asigna un Datanode (sticky session)
+// y escribe si es que se puede la reserva del asiento en el Datanode asignado
 func (s *brokerServer) RealizarCheckIn(ctx context.Context, req *pb.CheckInRequest) (*pb.CheckInResponse, error) {
 	log.Printf("Broker procesa RealizarCheckIn para cliente %s, vuelo %s, asiento %s", 
 		req.ClienteId, req.VueloId, req.Asiento)
@@ -629,6 +665,8 @@ func (s *brokerServer) RealizarCheckIn(ctx context.Context, req *pb.CheckInReque
 	}, nil
 }
 
+// ObtenerTarjetaEmbarque - Cuando un cliente solicita revisar su tarjeta de embarque
+// el Broker se conecta con el Datanode asignado al cliente para leer la información respetando el Sticky session
 func (s *brokerServer) ObtenerTarjetaEmbarque(ctx context.Context, req *pb.TarjetaRequest) (*pb.TarjetaResponse, error) {
 	log.Printf("Broker procesa ObtenerTarjetaEmbarque %s para cliente %s", 
 		req.TarjetaEmbarqueId, req.ClienteId)
@@ -679,13 +717,7 @@ func (s *brokerServer) ObtenerTarjetaEmbarque(ctx context.Context, req *pb.Tarje
 	}, nil
 }
 
-func (s *brokerServer) EnviarActualizacionVuelo(ctx context.Context, req *pb.ActualizacionVueloRequest) (*pb.ActualizacionVueloResponse, error) {
-	return &pb.ActualizacionVueloResponse{
-		Exito:   false,
-		Mensaje: "El broker no procesa actualizaciones, solo las distribuye",
-	}, nil
-}
-
+// getNextDatanode - Consigue el siguiente Datanode según Round Robin
 func (s *brokerServer) getNextDatanode() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -699,6 +731,8 @@ func (s *brokerServer) getNextDatanode() string {
 	return datanode
 }
 
+// getDatanodeForClient - Se asigna un Datanode a un cliente si no tiene uno asignado, si ya tiene uno
+// se usa ese para asegurar que lea lo que escribe
 func (s *brokerServer) getDatanodeForClient(clienteID string, stickyInfo *pb.StickyInfo) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -722,6 +756,8 @@ func (s *brokerServer) getDatanodeForClient(clienteID string, stickyInfo *pb.Sti
 	return datanode
 }
 
+// cargarFlightUpdates - Carga los vuelos del csv, retornando una lista con los ID de los
+// vuelos únicos evitando hacer duplicados
 func cargarFlightUpdates() []string {
     file, err := os.Open("flight_updates.csv")
     if err != nil {
@@ -761,6 +797,7 @@ func cargarFlightUpdates() []string {
     return vuelos
 }
 
+// main - Inicializa el Broker, se queda escuchando con TCP en el puerto 50051 e inicia la simulación
 func main() {
 	brokerID := flag.String("broker", "B1", "ID del broker")
 	flag.Parse()
@@ -793,5 +830,6 @@ func main() {
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}
+
 
 }
