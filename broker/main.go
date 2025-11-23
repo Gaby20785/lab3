@@ -139,7 +139,7 @@ func (s *brokerServer) asignarPistaConsenso(vueloID, pistaSolicitada string) {
             log.Printf("Broker: Pista %s asignada a %s", pista, vueloID)
 			logs = append(logs, fmt.Sprintf("[%s] Pista %s asignada a %s",
 				time.Now().Format("2006/01/02 15:04:05"), pista, vueloID))
-			s.GuardarLogs("Reporte.txt", logs)
+			s.GuardarLogs("output/Reporte.txt", logs)
             return
         }
         
@@ -153,7 +153,7 @@ func (s *brokerServer) asignarPistaConsenso(vueloID, pistaSolicitada string) {
     }
     intento++
     time.Sleep(100 * time.Millisecond)
-    s.GuardarLogs("Reporte.txt", logs)
+    s.GuardarLogs("output/Reporte.txt", logs)
 }
 
 func (s *brokerServer) liberarPistaConsenso(vueloID string) {
@@ -169,7 +169,7 @@ func (s *brokerServer) liberarPistaConsenso(vueloID string) {
 			logs = append(logs, fmt.Sprintf("[%s] Pista liberada de %s",
 				time.Now().Format("2006/01/02 15:04:05"), vueloID))
 
-			s.GuardarLogs("Reporte.txt", logs)
+			s.GuardarLogs("output/Reporte.txt", logs)
             return
         }
     }
@@ -177,7 +177,7 @@ func (s *brokerServer) liberarPistaConsenso(vueloID string) {
     log.Printf("Broker: No se pudo liberar pista de %s", vueloID)
 	logs = append(logs, fmt.Sprintf("[%s] No se pudo liberar pista de %s",
 		time.Now().Format("2006/01/02 15:04:05"), vueloID))
-	s.GuardarLogs("Reporte.txt", logs)
+	s.GuardarLogs("output/Reporte.txt", logs)
 }
 
 func (s *brokerServer) enviarAsignacionPista(nodoAddr, vueloID, pistaSolicitada string) (string, bool, bool) {
@@ -763,7 +763,7 @@ func main() {
 
 	broker.vectorClock["broker"] = 0
 	broker.cargarVuelos()
-	CrearReporte("Reporte.txt")
+	CrearReporte("output/Reporte.txt")
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)

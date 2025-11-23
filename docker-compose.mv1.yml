@@ -9,6 +9,9 @@ services:
       - "50051:50051"
     volumes:
       - ./flight_updates.csv:/app/flight_updates.csv
+      - ./output:/app/output
+    stdin_open: true
+    tty: true
     environment:
       - BROKER_HOST=broker
       - DATANODE1_HOST=172.24.69.53 # IP de MV3
@@ -26,6 +29,8 @@ services:
     command: ["./datanodes/datanode", "--nodo=DN3"]
     ports:
       - "50060:50060"
+    depends_on:
+      - broker
     environment:
       - BROKER_HOST=broker
       - DATANODE_HOST=datanode3
@@ -40,6 +45,8 @@ services:
     command: ["./clientesRYW/cliente-ryw", "--cliente=RYW1"]
     ports:
       - "50053:50053"
+    depends_on:
+      - broker
     environment:
       - COORDINADOR_HOST=172.24.69.53  # IP de MV4
       - BROKER_HOST=broker
@@ -53,6 +60,8 @@ services:
     command: ["./clientesMR/cliente-mr", "--cliente=MR1"]
     ports:
       - "50056:50056"
+    depends_on:
+      - broker
     environment:
       - BROKER_HOST=broker
       - CLIENTE_MR_HOST=cliente-mr1
