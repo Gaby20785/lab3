@@ -33,6 +33,9 @@ type NodoConsenso struct {
 	pistas              map[string]*EstadoPista
 	brokerConn          pb.AeroDistClient
 	registradoEnBroker  bool
+	cacheLider             string
+    ultimaVerificacionLider time.Time
+    muCache                sync.RWMutex
 }
 
 type EstadoPista struct {
@@ -58,6 +61,8 @@ func NuevoNodoConsenso(id, puerto string) *NodoConsenso {
 		pistas:          make(map[string]*EstadoPista),
 		timeoutEleccion: time.Duration(timeoutBase) * time.Millisecond,
 		registradoEnBroker: false,
+		cacheLider:            "",
+		ultimaVerificacionLider: time.Time{},
 	}
 	
 	nodo.inicializarPistas()
@@ -430,8 +435,12 @@ func (n *NodoConsenso) AsignarPista(ctx context.Context, req *pb.SolicitudPista)
     estado := n.estado
     n.mu.RUnlock()
 
+    // SILENCIAR: No loguear si es una verificación de TEST
+    if req.VueloId != "TEST" {
+        log.Printf("%s: Líder procesando asignación de pista para vuelo %s", n.id, req.VueloId)
+    }
+
     if estado != "LIDER" {
-        log.Printf("%s: Redirigiendo solicitud al líder (soy %s)", n.id, estado)
         return &pb.RespuestaPista{
             Exito:       false,
             Mensaje:     "No soy el líder",
@@ -440,8 +449,6 @@ func (n *NodoConsenso) AsignarPista(ctx context.Context, req *pb.SolicitudPista)
         }, nil
     }
 
-    log.Printf("%s: Líder procesando asignación de pista para vuelo %s", n.id, req.VueloId)
-
     pistaSolicitada := req.PistaSolicitada
     pistaOcupada := false
     
@@ -449,7 +456,9 @@ func (n *NodoConsenso) AsignarPista(ctx context.Context, req *pb.SolicitudPista)
         n.mu.RLock()
         if pista, exists := n.pistas[pistaSolicitada]; exists && pista.Ocupada {
             pistaOcupada = true
-            log.Printf("%s: Pista %s OCUPADA por vuelo %s", n.id, pistaSolicitada, pista.VueloAsignado)
+            if req.VueloId != "TEST" { // Solo loguear si no es TEST
+                log.Printf("%s: Pista %s OCUPADA por vuelo %s", n.id, pistaSolicitada, pista.VueloAsignado)
+            }
         }
         n.mu.RUnlock()
     }
@@ -459,6 +468,15 @@ func (n *NodoConsenso) AsignarPista(ctx context.Context, req *pb.SolicitudPista)
             Exito:        false,
             Mensaje:      "Pista ocupada",
             PistaOcupada: true,
+        }, nil
+    }
+
+    // Para vuelos TEST, responder rápido sin replicación
+    if req.VueloId == "TEST" {
+        return &pb.RespuestaPista{
+            Exito:         true,
+            Mensaje:       "OK (test)",
+            PistaAsignada: "TEST",
         }, nil
     }
 
@@ -831,22 +849,39 @@ func (n *NodoConsenso) descubrirLider() string {
 }
 
 func (n *NodoConsenso) esLider(nodoID string) bool {
-	addr := n.obtenerDireccionPorID(nodoID)
-	conn, err := grpc.Dial(addr, grpc.WithInsecure(), grpc.WithTimeout(1*time.Second))
-	if err != nil {
-		return false
-	}
-	defer conn.Close()
+    // Cache simple para evitar verificaciones muy frecuentes
+    n.mu.RLock()
+    if time.Since(n.ultimaVerificacionLider) < 2*time.Second && n.cacheLider == nodoID {
+        n.mu.RUnlock()
+        return true
+    }
+    n.mu.RUnlock()
 
-	client := pb.NewAeroDistClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+    addr := n.obtenerDireccionPorID(nodoID)
+    conn, err := grpc.Dial(addr, grpc.WithInsecure(), grpc.WithTimeout(500*time.Millisecond))
+    if err != nil {
+        return false
+    }
+    defer conn.Close()
 
-	resp, err := client.AsignarPista(ctx, &pb.SolicitudPista{
-		VueloId: "TEST",
-	})
+    client := pb.NewAeroDistClient(conn)
+    ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+    defer cancel()
 
-	return err == nil && !resp.Redirigir
+    resp, err := client.AsignarPista(ctx, &pb.SolicitudPista{
+        VueloId: "TEST",
+    })
+
+    if err == nil && !resp.Redirigir {
+        // Actualizar cache
+        n.mu.Lock()
+        n.cacheLider = nodoID
+        n.ultimaVerificacionLider = time.Now()
+        n.mu.Unlock()
+        return true
+    }
+    
+    return false
 }
 
 func (n *NodoConsenso) obtenerPuertoPorID(id string) string {
