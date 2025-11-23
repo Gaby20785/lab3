@@ -17,6 +17,9 @@ import (
 	pb "lab3/datanodes/proto"
 )
 
+// Estructura para un nodo de almacenamiento distribuido, estos
+// guardan los vuelos, reservas y se sincronizan entre ellos
+// con relojes vectoriales y gossip
 type datanodeServer struct {
 	pb.UnimplementedAeroDistServer
 	mu                sync.RWMutex
@@ -54,6 +57,8 @@ type TarjetaEmbarque struct {
 	Timestamp time.Time
 }
 
+// fusionarRelojes - Hace un merge de dos relojes de vectores generando un vector
+// con los valores más altos
 func fusionarRelojes(relojA, relojB map[string]int32) map[string]int32 {
 	fusionado := make(map[string]int32)
 	
@@ -70,6 +75,8 @@ func fusionarRelojes(relojA, relojB map[string]int32) map[string]int32 {
 	return fusionado
 }
 
+// compararaRelojes - Compara dos eventos con base en sus relojes de vectores
+// en los casos de posterior, anterior, concurrente o igual
 func compararRelojes(relojA, relojB map[string]int32) string {
 	aEsMayorEnAlguno := false
 	bEsMayorEnAlguno := false
@@ -103,6 +110,8 @@ func compararRelojes(relojA, relojB map[string]int32) string {
 	return "igual" // A = B
 }
 
+// priorirdadEstado - Pone una prioridad a los estados posibles de un vuelo
+// esto se hace para casos en los que hay conflictos de concurrencia
 func (s *datanodeServer) prioridadEstado(estado string) int {
 	prioridades := map[string]int{
 		"Cancelado":    100,
@@ -124,6 +133,8 @@ func (s *datanodeServer) prioridadEstado(estado string) int {
 	return 0
 }
 
+// resolverConflicto - Resuelve los conflictos concurrentes usando la prioridad de estado o en caso
+//	de tener la misma prioridad tomando al último que escribió como ganador, esto para fusionar los relojes
 func (s *datanodeServer) resolverConflicto(
 	vueloID string, 
 	estadoLocal *EstadoVuelo, 
@@ -166,6 +177,7 @@ func (s *datanodeServer) resolverConflicto(
 	estadoLocal.UltimaActualizacion = time.Unix(update.SimTimeSec, 0)
 }
 
+// generarAsientos - Genera los asientos de un vuelo y los deja vacios
 func (s *datanodeServer) generarAsientos() map[string]bool {
 	asientos := make(map[string]bool)
 	for fila := 1; fila <= 30; fila++ {
@@ -177,6 +189,7 @@ func (s *datanodeServer) generarAsientos() map[string]bool {
 	return asientos
 }
 
+// inicializarEstado - Carga los vuelos en memoria, estos están vacios ya que aún no inicia el flujo
 func (s *datanodeServer) inicializarEstado() {
 	s.estadoVuelos = make(map[string]*EstadoVuelo)
 	s.reservas = make(map[string]*Reserva)
@@ -191,6 +204,8 @@ func (s *datanodeServer) inicializarEstado() {
 	log.Printf("Datanode %s: Estado inicializado para %d vuelos", s.datanodeID, len(s.vuelosDisponibles))
 }
 
+// ObtenerAsientosDisponibles - Lee los estados de los asientos, esto devuelve todos los asientos
+// con un valor booleano que determina si están ocupados o libres
 func (s *datanodeServer) ObtenerAsientosDisponibles(ctx context.Context, req *pb.AsientosRequest) (*pb.AsientosResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -217,6 +232,8 @@ func (s *datanodeServer) ObtenerAsientosDisponibles(ctx context.Context, req *pb
 	}, nil
 }
 
+// ReservarAsiento - Reserva un asiento para un cliente solo si es la primera solicitud con el ID que llegó
+// con esto se mantiene la idempotencia de las operaciones de escritura
 func (s *datanodeServer) ReservarAsiento(ctx context.Context, req *pb.ReservaRequest) (*pb.ReservaResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -284,6 +301,7 @@ func (s *datanodeServer) ReservarAsiento(ctx context.Context, req *pb.ReservaReq
 	}, nil
 }
 
+// ObtenerInformacionesVuelo - Consulta una tarjeta de embarque en específico para los clientees RYW
 func (s *datanodeServer) ObtenerInformacionVuelo(ctx context.Context, req *pb.InfoVueloRequest) (*pb.InfoVueloResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -309,14 +327,9 @@ func (s *datanodeServer) ObtenerInformacionVuelo(ctx context.Context, req *pb.In
 	}, nil
 }
 
-func (s *datanodeServer) RegistrarEntidad(ctx context.Context, req *pb.RegistroRequest) (*pb.RegistroResponse, error) {
-	return &pb.RegistroResponse{Exito: true, Mensaje: "OK"}, nil
-}
-
-func (s *datanodeServer) SolicitarInicio(ctx context.Context, req *pb.InicioRequest) (*pb.InicioResponse, error) {
-	return &pb.InicioResponse{PuedeIniciar: true, Mensaje: "Datanode listo"}, nil
-}
-
+// EnviarActualizacionVuelo - Recibe una actualización del Broker para cambios de estado o cambios de puerta
+// con la lógica de consistencia causal detecta si la actualización es posterior, concurrente, anterior o igual
+// dada esta relación entre eventos actualiza, no actualiza o resuelve el conflicto de concurrencia
 func (s *datanodeServer) EnviarActualizacionVuelo(ctx context.Context, req *pb.ActualizacionVueloRequest) (*pb.ActualizacionVueloResponse, error) {
 	log.Printf("%s: Recibiendo update [%s] %s=%s (reloj: %v)", 
 		s.datanodeID, req.VueloId, req.UpdateType, req.UpdateValue, req.RelojVector.Clocks)
@@ -373,6 +386,8 @@ func (s *datanodeServer) EnviarActualizacionVuelo(ctx context.Context, req *pb.A
 	}, nil
 }
 
+// sincronizarAsientos - Sincroniza el mapa de asientos de un vuelo, teniendo en cuenta que
+// si un asiento local está desocupado y el asiento en remoto está ocupado, el asiento en local se ocupa
 func (s *datanodeServer) sincronizarAsientos(estadoLocal *EstadoVuelo, estadoRemoto *pb.EstadoVuelo) bool {
 	actualizado := false
     
@@ -389,6 +404,7 @@ func (s *datanodeServer) sincronizarAsientos(estadoLocal *EstadoVuelo, estadoRem
     return actualizado
 }
 
+// sincronizarTarjetas - Copia las tarjetas de embarque desconocidas de un gossip
 func (s *datanodeServer) sincronizarTarjetas(estadoLocal *EstadoVuelo, estadoRemoto *pb.EstadoVuelo) bool {
 	actualizado := false
     
@@ -408,6 +424,7 @@ func (s *datanodeServer) sincronizarTarjetas(estadoLocal *EstadoVuelo, estadoRem
     return actualizado
 }
 
+// prepararGossip - Empaqueta los estados locales para mandarlos a otro nodo en un gossip
 func (s *datanodeServer) prepararGossip() *pb.EstadoDatanode {
 	estados := make(map[string]*pb.EstadoVuelo)
     
@@ -444,6 +461,7 @@ func (s *datanodeServer) prepararGossip() *pb.EstadoDatanode {
     }
 }
 
+// relojesIguales - Compara dos relojes para saber si son iguales
 func (s *datanodeServer) relojesIguales(relojA, relojB map[string]int32) bool {
 	if len(relojA) != len(relojB) {
 		return false
@@ -457,6 +475,7 @@ func (s *datanodeServer) relojesIguales(relojA, relojB map[string]int32) bool {
 	return true
 }
 
+// procesarGossip - Recibe un gossip de otro Datanode y lo procesa para fusionar los estados locales y remotos
 func (s *datanodeServer) procesarGossip(estadoRemitente *pb.EstadoDatanode) bool {
     s.mu.Lock()
     defer s.mu.Unlock()
@@ -525,6 +544,7 @@ func (s *datanodeServer) procesarGossip(estadoRemitente *pb.EstadoDatanode) bool
     return actualizado
 }
 
+// SincronizarEstado - Otro Datanode puede llamar a este Datanode para hacer un gossip y que se pueda sincronizar
 func (s *datanodeServer) SincronizarEstado(ctx context.Context, req *pb.SincronizacionRequest) (*pb.SincronizacionResponse, error) {
 	log.Printf("%s: Recibiendo gossip de %s", s.datanodeID, req.DatanodeOrigen)
 
@@ -543,6 +563,7 @@ func (s *datanodeServer) SincronizarEstado(ctx context.Context, req *pb.Sincroni
 	}, nil
 }
 
+// iniciarGossip - Cada cierto tiempo hace un gossip
 func (s *datanodeServer) iniciarGossip() {
 	s.gossipTicker = time.NewTicker(5 * time.Second)
 	go func() {
@@ -552,6 +573,7 @@ func (s *datanodeServer) iniciarGossip() {
 	}()
 }
 
+// ejecutarCicloGossip - Manda el estado local a un nodo random
 func (s *datanodeServer) ejecutarCicloGossip() {
 	if len(s.knownNodes) == 0 {
 		return
@@ -592,6 +614,8 @@ func (s *datanodeServer) ejecutarCicloGossip() {
 	}
 }
 
+// ObtenerEstadoVuelo - Da el estado de un vuelo comparando con un reloj vectorial para devolver
+// solamente información igual o posterior respecto al reloj que se compara
 func (s *datanodeServer) ObtenerEstadoVuelo(ctx context.Context, req *pb.EstadoVueloRequest) (*pb.EstadoVueloResponse, error) {
 	log.Printf("%s: Cliente %s consulta vuelo %s (versión: %v)", 
 		s.datanodeID, req.ClienteId, req.VueloId, req.VersionCliente.GetClocks())
@@ -650,6 +674,7 @@ func (s *datanodeServer) ObtenerEstadoVuelo(ctx context.Context, req *pb.EstadoV
 	}, nil
 }
 
+// esVersionNueva - Compara si el reloj local es más actual que el del cliente
 func (s *datanodeServer) esVersionNueva(relojCliente map[string]int32) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -667,6 +692,8 @@ func (s *datanodeServer) esVersionNueva(relojCliente map[string]int32) bool {
 	return true
 }
 
+// verificarMonotonicidad - Compara el reloj local con el del cliente para determinar si se cumple
+// la monotonicidad
 func (s *datanodeServer) verificarMonotonicidad(relojCliente, relojDatanode map[string]int32) bool {
 	for nodo, valorCliente := range relojCliente {
 		if valorDatanode, existe := relojDatanode[nodo]; existe {
@@ -678,6 +705,7 @@ func (s *datanodeServer) verificarMonotonicidad(relojCliente, relojDatanode map[
 	return true
 }
 
+// cargarFlightUpdates - Carga los vuelos desde el csv
 func cargarFlightUpdates() []string {
 	ruta := "flight_updates.csv"
 
@@ -719,6 +747,7 @@ func cargarFlightUpdates() []string {
 	return vuelos
 }
 
+// conectarConBroker - Se conecta con el Broker
 func conectarConBroker(address string) pb.AeroDistClient {
 	conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
@@ -727,12 +756,14 @@ func conectarConBroker(address string) pb.AeroDistClient {
 	return pb.NewAeroDistClient(conn)
 }
 
+// inicializarRelojVectorial - Inicializa el reloj vectorial las acciones del Datanode y del broker en 0
 func (s *datanodeServer) inicializarRelojVectorial() {
 	s.vectorClock = make(map[string]int32)
 	s.vectorClock[s.datanodeID] = 0
 	s.vectorClock["broker"] = 0
 }
 
+// esperarInicio - Espera a que el Broker confirme el inicio del flujo de trabajo para poder empezar a hacer el gossip
 func (s *datanodeServer) esperarInicio() {
 	ctx := context.Background()
 	
@@ -757,6 +788,8 @@ func (s *datanodeServer) esperarInicio() {
 	}
 }
 
+// main - Inicializa el Datanode, inicializa el reloj vectorial y carga los vuelos, incia el ciclo gossips,
+// y finalmente se registra con el broker y espera a que el Broker confirme el inicio del flujo de trabajo para empezar
 func main() {
 	datanodePtr := flag.String("nodo", "DN1", "ID del datanode (DN1, DN2, DN3)")
 	flag.Parse()
@@ -866,4 +899,5 @@ func main() {
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}
+
 }
