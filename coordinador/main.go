@@ -15,6 +15,8 @@ import (
 	pb "lab3/coordinador/proto"
 )
 
+// Estructura del coordinador que gestiona las sesiones (sticky session) para garantizar
+// el Read Your Writes
 type coordinadorServer struct {
 	pb.UnimplementedAeroDistServer
 	mu                    sync.RWMutex
@@ -25,6 +27,8 @@ type coordinadorServer struct {
 	sesiones              map[string]*Sesion
 }
 
+// Sticky Session entre un cliente y un Datanode, tiene los datos del cliente, cuando se conectó
+// por última vez y el ttl para que gestione la expiración de sesiones
 type Sesion struct {
 	datanodeAddress string
 	lastAccess      time.Time
@@ -32,6 +36,8 @@ type Sesion struct {
 	ttl             time.Duration
 }
 
+// obtenerSesionValida - Verifica si una sesión existe para un cliente en particular, si no existe
+// o se terminó su ttl retorna false
 func (s *coordinadorServer) obtenerSesionValida(clienteID string) (*Sesion, bool) {
     s.mu.Lock()
     defer s.mu.Unlock()
@@ -49,6 +55,8 @@ func (s *coordinadorServer) obtenerSesionValida(clienteID string) (*Sesion, bool
     return sesion, true
 }
 
+// actualizarLastAccess - Cada vez que un cliente realiza una operación se actualiza el lastAccess
+// para que no se expire la sesión
 func (s *coordinadorServer) actualizarLastAccess(clienteID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -58,6 +66,7 @@ func (s *coordinadorServer) actualizarLastAccess(clienteID string) {
 	}
 }
 
+// limpiarSesionesExpiradas - Cada cierto tiempo revisa si hay sesiones expiradas, de ser así las elimina
 func (s *coordinadorServer) limpiarSesionesExpiradas() {
 	ticker := time.NewTicker(30 * time.Second)
 	go func() {
@@ -79,6 +88,8 @@ func (s *coordinadorServer) limpiarSesionesExpiradas() {
 	}()
 }
 
+// RegistrarEntidad - Registra a los clientes RYW y el coordinador se registra con el Broker
+// si todos los clientes RYW se registraron
 func (s *coordinadorServer) RegistrarEntidad(ctx context.Context, req *pb.RegistroRequest) (*pb.RegistroResponse, error) {
 	s.mu.Lock()
 	s.clientesRYWConectados[req.IdEntidad] = true
@@ -96,6 +107,8 @@ func (s *coordinadorServer) RegistrarEntidad(ctx context.Context, req *pb.Regist
 	}, nil
 }
 
+// SolicitarInicio - Solicita iniciar al Broker si todos los clientes RYW están registrados con el
+// coordinador, si faltan clientes se dice que aún no se registra el coordinador con el Broker
 func (s *coordinadorServer) SolicitarInicio(ctx context.Context, req *pb.InicioRequest) (*pb.InicioResponse, error) {
 	if s.registradoEnBroker {
 		resp, err := s.brokerConn.SolicitarInicio(ctx, &pb.InicioRequest{
@@ -110,6 +123,9 @@ func (s *coordinadorServer) SolicitarInicio(ctx context.Context, req *pb.InicioR
 	return &pb.InicioResponse{PuedeIniciar: false, Mensaje: "Coordinador no registrado en broker aún"}, nil
 }
 
+// ObtenerEstadoInicial - Cuando un cliente quiere solicitar el estado de un vuelo, el coordinador
+// la consulta al Broker con el Datanode asignado al cliente, en caso de no tener Datanode asignado
+// se asigna uno por Round Robin
 func (s *coordinadorServer) ObtenerEstadoInicial(ctx context.Context, req *pb.EstadoInicialRequest) (*pb.EstadoInicialResponse, error) {
 	log.Printf("Coordinador redirige ObtenerEstadoInicial del cliente %s", req.ClienteId)
 
@@ -145,6 +161,8 @@ func (s *coordinadorServer) ObtenerEstadoInicial(ctx context.Context, req *pb.Es
 	return resp, nil
 }
 
+// RealizarCheckIn - Cuando un cliente quiere hacer un CheckIn el coordinador lo redirige al coordinador
+// para que consulte al Datanode asignado a este cliente, para garantizar la consistencia de la lectura
 func (s *coordinadorServer) RealizarCheckIn(ctx context.Context, req *pb.CheckInRequest) (*pb.CheckInResponse, error) {
 	log.Printf("Coordinador redirige RealizarCheckIn del cliente %s", req.ClienteId)
 
@@ -195,6 +213,9 @@ func (s *coordinadorServer) RealizarCheckIn(ctx context.Context, req *pb.CheckIn
 	return resp, nil
 }
 
+// ObtenerTarjetaEmbarque - Cuando un cliente quiere leer inmediatamente despues de escribir, el coordinador
+// reenvía la solicitud al Broker para que consulte al Datanode asociado al cliente, como es donde se escribió
+// cumple con leer lo que escribes
 func (s *coordinadorServer) ObtenerTarjetaEmbarque(ctx context.Context, req *pb.TarjetaRequest) (*pb.TarjetaResponse, error) {
 	log.Printf("Coordinador procesa ObtenerTarjetaEmbarque del cliente %s", req.ClienteId)
 
@@ -229,6 +250,7 @@ func (s *coordinadorServer) ObtenerTarjetaEmbarque(ctx context.Context, req *pb.
 	return resp, nil
 }
 
+// registrarEnBroker - El coordinador se registra en el Broker
 func (s *coordinadorServer) registrarEnBroker() {
 	ctx := context.Background()
 
@@ -252,6 +274,7 @@ func (s *coordinadorServer) registrarEnBroker() {
 	log.Printf("Coordinador registrado en broker - Clientes RYW completos: 3/3")
 }
 
+// conectarConBroker - El coordinador se conecta con el Broker
 func conectarConBroker(address string) pb.AeroDistClient {
 	conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
@@ -260,6 +283,9 @@ func conectarConBroker(address string) pb.AeroDistClient {
 	return pb.NewAeroDistClient(conn)
 }
 
+// main - Inicializa al coordinador, se conecta con el Broker, se pone a limpiar sesiones de fondo,
+// empieza a escuchar en el puerto 50052 para solicitar inicio al Broker hasta que inicia con la autorización
+// del Broker
 func main() {
 	coordinadorID := flag.String("coordinador", "C1", "ID del coordinador")
 	flag.Parse()
@@ -317,4 +343,5 @@ func main() {
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}
+
 }
