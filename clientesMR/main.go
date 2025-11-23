@@ -15,6 +15,8 @@ import (
 	pb "lab3/clientesMR/proto"
 )
 
+// Estructura del Cliente MR, guarda la conexión con el Broker
+// y recuerda su versión local (última que vió) para comparar con nuevas lecturas
 type mrClient struct {
 	clientID      string
 	brokerConn    pb.AeroDistClient
@@ -23,6 +25,7 @@ type mrClient struct {
 	mu            sync.RWMutex
 }
 
+// cargarFlightUpdates - Carga los vuelos disponibles que están en el csv
 func (c *mrClient) cargarFlightUpdates() []string {
 	ruta := "flight_updates.csv"
 
@@ -64,6 +67,7 @@ func (c *mrClient) cargarFlightUpdates() []string {
 	return vuelos
 }
 
+// conectarConBroker - Se conecta con el Broker
 func (c *mrClient) conectarConBroker(address string) {
 	conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
@@ -73,6 +77,8 @@ func (c *mrClient) conectarConBroker(address string) {
 	log.Printf("Cliente MR %s: Conectado al broker en %s", c.clientID, address)
 }
 
+// registrarEnBroker - Llama a RegistrarEntidad del Broker para que este guarde su dirección y que tipo
+// de entidad es
 func (c *mrClient) registrarEnBroker() {
 	ctx := context.Background()
 	
@@ -104,6 +110,8 @@ func (c *mrClient) registrarEnBroker() {
 	log.Printf("Cliente MR %s registrado en broker", c.clientID)
 }
 
+// esperarInicio - Consulta al Broker continuamente si se puede iniciar la simulación,
+// cuando se llega a la cantidad de entidades requeridas el broker da la señal de inicio
 func (c *mrClient) esperarInicio() {
 	ctx := context.Background()
 	
@@ -128,6 +136,8 @@ func (c *mrClient) esperarInicio() {
 	}
 }
 
+// consultarEstadoVuelo - Consulta el estado de un vuelo al Broker y verifica que está
+// leyendo una versión igual o más actual a la que tiene guardada en local
 func (c *mrClient) consultarEstadoVuelo(vueloID string) bool {
 	c.mu.RLock()
 	versionCliente, tieneVersion := c.versionLocal[vueloID]
@@ -183,6 +193,8 @@ func (c *mrClient) consultarEstadoVuelo(vueloID string) bool {
 	}
 }
 
+// verificarMonotonicidad - Verifica que la nueva lectura es la misma o más actual que la guardada en
+// local para confirmar que se cumple las lecturas monótonas
 func (c *mrClient) verificarMonotonicidad(viejo, nuevo *pb.VectorClock) bool {
     if viejo == nil || nuevo == nil {
         return true
@@ -212,6 +224,8 @@ func (c *mrClient) verificarMonotonicidad(viejo, nuevo *pb.VectorClock) bool {
     return violaciones == 0
 }
 
+// ejecutarConsultas - Consulta continuamente vuelos al azar cada cierto tiempo
+// verificando en cada consulta que se cumpla con las lecturas monótonas
 func (c *mrClient) ejecutarConsultas() {
 	log.Printf("Cliente MR %s iniciando consultas continuas...", c.clientID)
 	
@@ -239,7 +253,7 @@ func (c *mrClient) ejecutarConsultas() {
 		time.Sleep(espera)
 	}
 }
-
+// main - Inicializa el cliente, se conecta y registra con el Broker para empezar a hacer sus consultas
 func main() {
 	clientPtr := flag.String("cliente", "MR1", "ID del cliente (MR1, MR2)")
 	flag.Parse()
@@ -261,4 +275,5 @@ func main() {
 	log.Printf("Cliente MR %s completamente inicializado y operando", client.clientID)
 
 	select {}
+
 }
